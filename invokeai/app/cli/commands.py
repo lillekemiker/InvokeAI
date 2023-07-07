@@ -2,7 +2,17 @@
 
 from abc import ABC, abstractmethod
 import argparse
-from typing import Any, Callable, Iterable, Literal, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    Literal,
+    Optional,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 from pydantic import BaseModel, Field
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -14,8 +24,14 @@ from ..services.graph import GraphExecutionState, LibraryGraph, Edge
 from ..services.invoker import Invoker
 
 
-def add_field_argument(command_parser, name: str, field, default_override = None):
-    default = default_override if default_override is not None else field.default if field.default_factory is None else field.default_factory()
+def add_field_argument(command_parser, name: str, field, default_override=None):
+    default = (
+        default_override
+        if default_override is not None
+        else field.default
+        if field.default_factory is None
+        else field.default_factory()
+    )
     if get_origin(field.type_) == Literal:
         allowed_values = get_args(field.type_)
         allowed_types = set()
@@ -47,8 +63,8 @@ def add_parsers(
     commands: list[type],
     command_field: str = "type",
     exclude_fields: list[str] = ["id", "type"],
-    add_arguments: Callable[[argparse.ArgumentParser], None]|None = None
-    ):
+    add_arguments: Optional[Callable[[argparse.ArgumentParser], None]] = None,
+):
     """Adds parsers for each command to the subparsers"""
 
     # Create subparsers for each command
@@ -61,7 +77,7 @@ def add_parsers(
             add_arguments(command_parser)
 
         # Convert all fields to arguments
-        fields = command.__fields__ # type: ignore
+        fields = command.__fields__  # type: ignore
         for name, field in fields.items():
             if name in exclude_fields:
                 continue
@@ -72,11 +88,11 @@ def add_parsers(
 def add_graph_parsers(
     subparsers,
     graphs: list[LibraryGraph],
-    add_arguments: Callable[[argparse.ArgumentParser], None]|None = None
+    add_arguments: Optional[Callable[[argparse.ArgumentParser], None]] = None,
 ):
     for graph in graphs:
         command_parser = subparsers.add_parser(graph.name, help=graph.description)
-        
+
         if add_arguments is not None:
             add_arguments(command_parser)
 
@@ -85,7 +101,9 @@ def add_graph_parsers(
             node = graph.graph.get_node(exposed_input.node_path)
             field = node.__fields__[exposed_input.field]
             default_override = getattr(node, exposed_input.field)
-            add_field_argument(command_parser, exposed_input.alias, field, default_override)
+            add_field_argument(
+                command_parser, exposed_input.alias, field, default_override
+            )
 
 
 class CliContext:
@@ -96,7 +114,12 @@ class CliContext:
     graph_nodes: dict[str, str]
     nodes_added: list[str]
 
-    def __init__(self, invoker: Invoker, session: GraphExecutionState, parser: argparse.ArgumentParser):
+    def __init__(
+        self,
+        invoker: Invoker,
+        session: GraphExecutionState,
+        parser: argparse.ArgumentParser,
+    ):
         self.invoker = invoker
         self.session = session
         self.parser = parser
@@ -105,7 +128,9 @@ class CliContext:
         self.nodes_added = list()
 
     def get_session(self):
-        self.session = self.invoker.services.graph_execution_manager.get(self.session.id)
+        self.session = self.invoker.services.graph_execution_manager.get(
+            self.session.id
+        )
         return self.session
 
     def reset(self):
@@ -128,6 +153,7 @@ class CliContext:
 
 class ExitCli(Exception):
     """Exception to exit the CLI"""
+
     pass
 
 
@@ -155,7 +181,12 @@ class BaseCommand(ABC, BaseModel):
     @classmethod
     def get_commands_map(cls):
         # Get the type strings out of the literals and into a dictionary
-        return dict(map(lambda t: (get_args(get_type_hints(t)['type'])[0], t),BaseCommand.get_all_subclasses()))
+        return dict(
+            map(
+                lambda t: (get_args(get_type_hints(t)["type"])[0], t),
+                BaseCommand.get_all_subclasses(),
+            )
+        )
 
     @abstractmethod
     def run(self, context: CliContext) -> None:
@@ -165,7 +196,8 @@ class BaseCommand(ABC, BaseModel):
 
 class ExitCommand(BaseCommand):
     """Exits the CLI"""
-    type: Literal['exit'] = 'exit'
+
+    type: Literal["exit"] = "exit"
 
     def run(self, context: CliContext) -> None:
         raise ExitCli()
@@ -173,7 +205,8 @@ class ExitCommand(BaseCommand):
 
 class HelpCommand(BaseCommand):
     """Shows help"""
-    type: Literal['help'] = 'help'
+
+    type: Literal["help"] = "help"
 
     def run(self, context: CliContext) -> None:
         context.parser.print_help()
@@ -218,7 +251,8 @@ def get_invocation_command(invocation) -> str:
 
 class HistoryCommand(BaseCommand):
     """Shows the invocation history"""
-    type: Literal['history'] = 'history'
+
+    type: Literal["history"] = "history"
 
     # Inputs
     # fmt: off
@@ -235,7 +269,8 @@ class HistoryCommand(BaseCommand):
 
 class SetDefaultCommand(BaseCommand):
     """Sets a default value for a field"""
-    type: Literal['default'] = 'default'
+
+    type: Literal["default"] = "default"
 
     # Inputs
     # fmt: off
@@ -253,10 +288,13 @@ class SetDefaultCommand(BaseCommand):
 
 class DrawGraphCommand(BaseCommand):
     """Debugs a graph"""
-    type: Literal['draw_graph'] = 'draw_graph'
+
+    type: Literal["draw_graph"] = "draw_graph"
 
     def run(self, context: CliContext) -> None:
-        session: GraphExecutionState = context.invoker.services.graph_execution_manager.get(context.session.id)
+        session: GraphExecutionState = (
+            context.invoker.services.graph_execution_manager.get(context.session.id)
+        )
         nxgraph = session.graph.nx_graph_flat()
 
         # Draw the networkx graph
@@ -271,10 +309,13 @@ class DrawGraphCommand(BaseCommand):
 
 class DrawExecutionGraphCommand(BaseCommand):
     """Debugs an execution graph"""
-    type: Literal['draw_xgraph'] = 'draw_xgraph'
+
+    type: Literal["draw_xgraph"] = "draw_xgraph"
 
     def run(self, context: CliContext) -> None:
-        session: GraphExecutionState = context.invoker.services.graph_execution_manager.get(context.session.id)
+        session: GraphExecutionState = (
+            context.invoker.services.graph_execution_manager.get(context.session.id)
+        )
         nxgraph = session.execution_graph.nx_graph_flat()
 
         # Draw the networkx graph
@@ -285,6 +326,7 @@ class DrawExecutionGraphCommand(BaseCommand):
         nx.draw_networkx_labels(nxgraph, pos, font_size=20, font_family="sans-serif")
         plt.axis("off")
         plt.show()
+
 
 class SortedHelpFormatter(argparse.HelpFormatter):
     def _iter_indented_subactions(self, action):

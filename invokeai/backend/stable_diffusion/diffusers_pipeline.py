@@ -48,6 +48,7 @@ from .diffusion import (
 )
 from .offloading import FullyLoadedModelGroup, LazilyLoadedModelGroup, ModelGroup
 
+
 @dataclass
 class PipelineIntermediateState:
     run_id: str
@@ -73,7 +74,11 @@ class AddsMaskLatents:
     initial_image_latents: torch.Tensor
 
     def __call__(
-        self, latents: torch.Tensor, t: torch.Tensor, text_embeddings: torch.Tensor, **kwargs,
+        self,
+        latents: torch.Tensor,
+        t: torch.Tensor,
+        text_embeddings: torch.Tensor,
+        **kwargs,
     ) -> torch.Tensor:
         model_input = self.add_mask_channels(latents)
         return self.forward(model_input, t, text_embeddings, **kwargs)
@@ -105,7 +110,10 @@ class AddsMaskGuidance:
     _debug: Optional[Callable] = None
 
     def __call__(
-        self, step_output: BaseOutput | SchedulerOutput, t: torch.Tensor, conditioning
+        self,
+        step_output: Union[BaseOutput, SchedulerOutput],
+        t: torch.Tensor,
+        conditioning,
     ) -> BaseOutput:
         output_class = step_output.__class__  # We'll create a new one with masked data.
 
@@ -211,6 +219,7 @@ class GeneratorToCallbackinator(Generic[ParamType, ReturnType, CallbackType]):
         if result is None:
             raise AssertionError("why was that an empty generator?")
         return result
+
 
 @dataclass
 class ControlNetData:
@@ -393,7 +402,11 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
                 else:
                     self.disable_attention_slicing()
 
-    def to(self, torch_device: Optional[Union[str, torch.device]] = None, silence_dtype_warnings=False):
+    def to(
+        self,
+        torch_device: Optional[Union[str, torch.device]] = None,
+        silence_dtype_warnings=False,
+    ):
         # overridden method; types match the superclass.
         if torch_device is None:
             return self
@@ -476,7 +489,7 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
         **kwargs,
     ) -> tuple[torch.Tensor, Optional[AttentionMapSaver]]:
         if self.scheduler.config.get("cpu_only", False):
-            scheduler_device = torch.device('cpu')
+            scheduler_device = torch.device("cpu")
         else:
             scheduler_device = self._model_group.device_for(self.unet)
 
@@ -518,9 +531,9 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
             additional_guidance = []
         extra_conditioning_info = conditioning_data.extra
         with self.invokeai_diffuser.custom_attention_context(
-                self.invokeai_diffuser.model,
-                extra_conditioning_info=extra_conditioning_info,
-                step_count=len(self.scheduler.timesteps),
+            self.invokeai_diffuser.model,
+            extra_conditioning_info=extra_conditioning_info,
+            step_count=len(self.scheduler.timesteps),
         ):
             yield PipelineIntermediateState(
                 run_id=run_id,
@@ -616,16 +629,23 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
                 #     that are combined at higher level to make control_mode enum
                 #  soft_injection determines whether to do per-layer re-weighting adjustment (if True)
                 #     or default weighting (if False)
-                soft_injection = (control_mode == "more_prompt" or control_mode == "more_control")
+                soft_injection = (
+                    control_mode == "more_prompt" or control_mode == "more_control"
+                )
                 #  cfg_injection = determines whether to apply ControlNet to only the conditional (if True)
                 #      or the default both conditional and unconditional (if False)
-                cfg_injection = (control_mode == "more_control" or control_mode == "unbalanced")
+                cfg_injection = (
+                    control_mode == "more_control" or control_mode == "unbalanced"
+                )
 
-                first_control_step = math.floor(control_datum.begin_step_percent * total_step_count)
-                last_control_step = math.ceil(control_datum.end_step_percent * total_step_count)
+                first_control_step = math.floor(
+                    control_datum.begin_step_percent * total_step_count
+                )
+                last_control_step = math.ceil(
+                    control_datum.end_step_percent * total_step_count
+                )
                 # only apply controlnet if current step is within the controlnet's begin/end step range
                 if step_index >= first_control_step and step_index <= last_control_step:
-
                     if cfg_injection:
                         control_latent_input = unet_latent_input
                     else:
@@ -634,11 +654,19 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
                         #     classifier_free_guidance is <= 1.0 ?)
                         control_latent_input = torch.cat([unet_latent_input] * 2)
 
-                    if cfg_injection:  # only applying ControlNet to conditional instead of in unconditioned
-                        encoder_hidden_states = torch.cat([conditioning_data.unconditioned_embeddings])
+                    if (
+                        cfg_injection
+                    ):  # only applying ControlNet to conditional instead of in unconditioned
+                        encoder_hidden_states = torch.cat(
+                            [conditioning_data.unconditioned_embeddings]
+                        )
                     else:
-                        encoder_hidden_states = torch.cat([conditioning_data.unconditioned_embeddings,
-                                                           conditioning_data.text_embeddings])
+                        encoder_hidden_states = torch.cat(
+                            [
+                                conditioning_data.unconditioned_embeddings,
+                                conditioning_data.text_embeddings,
+                            ]
+                        )
                     if isinstance(control_datum.weight, list):
                         # if controlnet has multiple weights, use the weight for the current step
                         controlnet_weight = control_datum.weight[step_index]
@@ -652,24 +680,33 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
                         timestep=timestep,
                         encoder_hidden_states=encoder_hidden_states,
                         controlnet_cond=control_datum.image_tensor,
-                        conditioning_scale=controlnet_weight, # controlnet specific, NOT the guidance scale
-                        guess_mode=soft_injection, # this is still called guess_mode in diffusers ControlNetModel
+                        conditioning_scale=controlnet_weight,  # controlnet specific, NOT the guidance scale
+                        guess_mode=soft_injection,  # this is still called guess_mode in diffusers ControlNetModel
                         return_dict=False,
                     )
                     if cfg_injection:
                         # Inferred ControlNet only for the conditional batch.
                         # To apply the output of ControlNet to both the unconditional and conditional batches,
                         #   add 0 to the unconditional batch to keep it unchanged.
-                        down_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_samples]
-                        mid_sample = torch.cat([torch.zeros_like(mid_sample), mid_sample])
+                        down_samples = [
+                            torch.cat([torch.zeros_like(d), d]) for d in down_samples
+                        ]
+                        mid_sample = torch.cat(
+                            [torch.zeros_like(mid_sample), mid_sample]
+                        )
 
                     if down_block_res_samples is None and mid_block_res_sample is None:
-                        down_block_res_samples, mid_block_res_sample = down_samples, mid_sample
+                        down_block_res_samples, mid_block_res_sample = (
+                            down_samples,
+                            mid_sample,
+                        )
                     else:
                         # add controlnet outputs together if have multiple controlnets
                         down_block_res_samples = [
                             samples_prev + samples_curr
-                            for samples_prev, samples_curr in zip(down_block_res_samples, down_samples)
+                            for samples_prev, samples_curr in zip(
+                                down_block_res_samples, down_samples
+                            )
                         ]
                         mid_block_res_sample += mid_sample
 
@@ -683,7 +720,7 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
             step_index=step_index,
             total_step_count=total_step_count,
             down_block_additional_residuals=down_block_res_samples,  # from controlnet(s)
-            mid_block_additional_residual=mid_block_res_sample,      # from controlnet(s)
+            mid_block_additional_residual=mid_block_res_sample,  # from controlnet(s)
         )
 
         # compute the previous noisy sample x_t -> x_t-1
@@ -725,7 +762,10 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
 
         # First three args should be positional, not keywords, so torch hooks can see them.
         return self.unet(
-            latents, t, text_embeddings, cross_attention_kwargs=cross_attention_kwargs,
+            latents,
+            t,
+            text_embeddings,
+            cross_attention_kwargs=cross_attention_kwargs,
             **kwargs,
         ).sample
 
@@ -779,8 +819,12 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
     ) -> InvokeAIStableDiffusionPipelineOutput:
         timesteps, _ = self.get_img2img_timesteps(num_inference_steps, strength)
         result_latents, result_attention_maps = self.latents_from_embeddings(
-            latents=initial_latents if strength < 1.0 else torch.zeros_like(
-                initial_latents, device=initial_latents.device, dtype=initial_latents.dtype
+            latents=initial_latents
+            if strength < 1.0
+            else torch.zeros_like(
+                initial_latents,
+                device=initial_latents.device,
+                dtype=initial_latents.dtype,
             ),
             num_inference_steps=num_inference_steps,
             conditioning_data=conditioning_data,
@@ -809,11 +853,13 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
         assert img2img_pipeline.scheduler is self.scheduler
 
         if self.scheduler.config.get("cpu_only", False):
-            scheduler_device = torch.device('cpu')
+            scheduler_device = torch.device("cpu")
         else:
             scheduler_device = self._model_group.device_for(self.unet)
 
-        img2img_pipeline.scheduler.set_timesteps(num_inference_steps, device=scheduler_device)
+        img2img_pipeline.scheduler.set_timesteps(
+            num_inference_steps, device=scheduler_device
+        )
         timesteps, adjusted_steps = img2img_pipeline.get_timesteps(
             num_inference_steps, strength, device=scheduler_device
         )
@@ -888,8 +934,12 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
 
         try:
             result_latents, result_attention_maps = self.latents_from_embeddings(
-                latents=init_image_latents if strength < 1.0 else torch.zeros_like(
-                    init_image_latents, device=init_image_latents.device, dtype=init_image_latents.dtype
+                latents=init_image_latents
+                if strength < 1.0
+                else torch.zeros_like(
+                    init_image_latents,
+                    device=init_image_latents.device,
+                    dtype=init_image_latents.dtype,
                 ),
                 num_inference_steps=num_inference_steps,
                 conditioning_data=conditioning_data,
@@ -963,12 +1013,11 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
 
     def debug_latents(self, latents, msg):
         from invokeai.backend.image_util import debug_image
+
         with torch.inference_mode():
             decoded = self.numpy_to_pil(self.decode_latents(latents))
         for i, img in enumerate(decoded):
-            debug_image(
-                img, f"latents {msg} {i+1}/{len(decoded)}", debug_status=True
-            )
+            debug_image(img, f"latents {msg} {i+1}/{len(decoded)}", debug_status=True)
 
     # Copied from diffusers pipeline_stable_diffusion_controlnet.py
     # Returns torch.Tensor of shape (batch_size, 3, height, width)
@@ -978,15 +1027,14 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
         # FIXME: need to fix hardwiring of width and height, change to basing on latents dimensions?
         # latents,
         width=512,  # should be 8 * latent.shape[3]
-        height=512, # should be 8 * latent height[2]
+        height=512,  # should be 8 * latent height[2]
         batch_size=1,
         num_images_per_prompt=1,
         device="cuda",
         dtype=torch.float16,
         do_classifier_free_guidance=True,
-        control_mode="balanced"
+        control_mode="balanced",
     ):
-
         if not isinstance(image, torch.Tensor):
             if isinstance(image, PIL.Image.Image):
                 image = [image]
@@ -995,7 +1043,9 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
                 images = []
                 for image_ in image:
                     image_ = image_.convert("RGB")
-                    image_ = image_.resize((width, height), resample=PIL_INTERPOLATION["lanczos"])
+                    image_ = image_.resize(
+                        (width, height), resample=PIL_INTERPOLATION["lanczos"]
+                    )
                     image_ = np.array(image_)
                     image_ = image_[None, :]
                     images.append(image_)
@@ -1015,7 +1065,7 @@ class StableDiffusionGeneratorPipeline(StableDiffusionPipeline):
             repeat_by = num_images_per_prompt
         image = image.repeat_interleave(repeat_by, dim=0)
         image = image.to(device=device, dtype=dtype)
-        cfg_injection = (control_mode == "more_control" or control_mode == "unbalanced")
+        cfg_injection = control_mode == "more_control" or control_mode == "unbalanced"
         if do_classifier_free_guidance and not cfg_injection:
             image = torch.cat([image] * 2)
         return image

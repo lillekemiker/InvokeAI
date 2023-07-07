@@ -3,9 +3,10 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 from queue import Queue
-from typing import Dict
+from typing import Dict, Optional, Union
 
 import torch
+
 
 class LatentsStorageBase(ABC):
     """Responsible for storing and retrieving latents."""
@@ -25,13 +26,15 @@ class LatentsStorageBase(ABC):
 
 class ForwardCacheLatentsStorage(LatentsStorageBase):
     """Caches the latest N latents in memory, writing-thorugh to and reading from underlying storage"""
-    
+
     __cache: Dict[str, torch.Tensor]
     __cache_ids: Queue
     __max_cache_size: int
     __underlying_storage: LatentsStorageBase
 
-    def __init__(self, underlying_storage: LatentsStorageBase, max_cache_size: int = 20):
+    def __init__(
+        self, underlying_storage: LatentsStorageBase, max_cache_size: int = 20
+    ):
         self.__underlying_storage = underlying_storage
         self.__cache = dict()
         self.__cache_ids = Queue()
@@ -55,7 +58,7 @@ class ForwardCacheLatentsStorage(LatentsStorageBase):
         if name in self.__cache:
             del self.__cache[name]
 
-    def __get_cache(self, name: str) -> torch.Tensor|None:
+    def __get_cache(self, name: str) -> Optional[torch.Tensor]:
         return None if name not in self.__cache else self.__cache[name]
 
     def __set_cache(self, name: str, data: torch.Tensor):
@@ -69,10 +72,12 @@ class ForwardCacheLatentsStorage(LatentsStorageBase):
 class DiskLatentsStorage(LatentsStorageBase):
     """Stores latents in a folder on disk without caching"""
 
-    __output_folder: str | Path
+    __output_folder: Union[str, Path]
 
-    def __init__(self, output_folder: str | Path):
-        self.__output_folder = output_folder if isinstance(output_folder, Path) else Path(output_folder)
+    def __init__(self, output_folder: Union[str, Path]):
+        self.__output_folder = (
+            output_folder if isinstance(output_folder, Path) else Path(output_folder)
+        )
         self.__output_folder.mkdir(parents=True, exist_ok=True)
 
     def get(self, name: str) -> torch.Tensor:
@@ -87,8 +92,6 @@ class DiskLatentsStorage(LatentsStorageBase):
     def delete(self, name: str) -> None:
         latent_path = self.get_path(name)
         latent_path.unlink()
-        
 
     def get_path(self, name: str) -> Path:
         return self.__output_folder / name
-    

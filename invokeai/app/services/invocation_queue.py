@@ -3,12 +3,15 @@
 import time
 from abc import ABC, abstractmethod
 from queue import Queue
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class InvocationQueueItem(BaseModel):
-    graph_execution_state_id: str = Field(description="The ID of the graph execution state")
+    graph_execution_state_id: str = Field(
+        description="The ID of the graph execution state"
+    )
     invocation_id: str = Field(description="The ID of the node being invoked")
     invoke_all: bool = Field(default=False)
     timestamp: float = Field(default_factory=time.time)
@@ -22,7 +25,7 @@ class InvocationQueueABC(ABC):
         pass
 
     @abstractmethod
-    def put(self, item: InvocationQueueItem | None) -> None:
+    def put(self, item: Optional[InvocationQueueItem]) -> None:
         pass
 
     @abstractmethod
@@ -45,9 +48,11 @@ class MemoryInvocationQueue(InvocationQueueABC):
     def get(self) -> InvocationQueueItem:
         item = self.__queue.get()
 
-        while isinstance(item, InvocationQueueItem) \
-            and item.graph_execution_state_id in self.__cancellations \
-            and self.__cancellations[item.graph_execution_state_id] > item.timestamp:
+        while (
+            isinstance(item, InvocationQueueItem)
+            and item.graph_execution_state_id in self.__cancellations
+            and self.__cancellations[item.graph_execution_state_id] > item.timestamp
+        ):
             item = self.__queue.get()
 
         # Clear old items
@@ -57,7 +62,7 @@ class MemoryInvocationQueue(InvocationQueueABC):
 
         return item
 
-    def put(self, item: InvocationQueueItem | None) -> None:
+    def put(self, item: Optional[InvocationQueueItem]) -> None:
         self.__queue.put(item)
 
     def cancel(self, graph_execution_state_id: str) -> None:

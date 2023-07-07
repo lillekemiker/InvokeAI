@@ -11,6 +11,7 @@ CUDA_DEVICE = torch.device("cuda")
 MPS_DEVICE = torch.device("mps")
 config = InvokeAIAppConfig.get_config()
 
+
 def choose_torch_device() -> torch.device:
     """Convenience routine for guessing which GPU device to run model on"""
     if config.always_use_cpu:
@@ -49,7 +50,7 @@ def choose_autocast(precision):
     return nullcontext
 
 
-def normalize_device(device: str | torch.device) -> torch.device:
+def normalize_device(device: Union[str, torch.device]) -> torch.device:
     """Ensure device has a device index defined, if appropriate."""
     device = torch.device(device)
     if device.index is None:

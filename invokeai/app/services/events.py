@@ -1,10 +1,16 @@
 # Copyright (c) 2022 Kyle Schouviller (https://github.com/kyle0654)
 
-from typing import Any
+from typing import Any, Optional
 from invokeai.app.models.image import ProgressImage
 from invokeai.app.util.misc import get_timestamp
-from invokeai.app.services.model_manager_service import BaseModelType, ModelType, SubModelType, ModelInfo
+from invokeai.app.services.model_manager_service import (
+    BaseModelType,
+    ModelType,
+    SubModelType,
+    ModelInfo,
+)
 from invokeai.app.models.exceptions import CanceledException
+
 
 class EventServiceBase:
     session_event: str = "session_event"
@@ -28,7 +34,7 @@ class EventServiceBase:
         graph_execution_state_id: str,
         node: dict,
         source_node_id: str,
-        progress_image: ProgressImage | None,
+        progress_image: Optional[ProgressImage],
         step: int,
         total_steps: int,
     ) -> None:
@@ -39,7 +45,9 @@ class EventServiceBase:
                 graph_execution_state_id=graph_execution_state_id,
                 node=node,
                 source_node_id=source_node_id,
-                progress_image=progress_image.dict() if progress_image is not None else None,
+                progress_image=progress_image.dict()
+                if progress_image is not None
+                else None,
                 step=step,
                 total_steps=total_steps,
             ),
@@ -103,15 +111,15 @@ class EventServiceBase:
             ),
         )
 
-    def emit_model_load_started (
-            self,
-            graph_execution_state_id: str,
-            node: dict,
-            source_node_id: str,
-            model_name: str,
-            base_model: BaseModelType,
-            model_type: ModelType,
-            submodel: SubModelType,
+    def emit_model_load_started(
+        self,
+        graph_execution_state_id: str,
+        node: dict,
+        source_node_id: str,
+        model_name: str,
+        base_model: BaseModelType,
+        model_type: ModelType,
+        submodel: SubModelType,
     ) -> None:
         """Emitted when a model is requested"""
         self.__emit_session_event(
@@ -128,15 +136,15 @@ class EventServiceBase:
         )
 
     def emit_model_load_completed(
-            self,
-            graph_execution_state_id: str,
-            node: dict,
-            source_node_id: str,
-            model_name: str,
-            base_model: BaseModelType,
-            model_type: ModelType,
-            submodel: SubModelType,
-            model_info: ModelInfo,
+        self,
+        graph_execution_state_id: str,
+        node: dict,
+        source_node_id: str,
+        model_name: str,
+        base_model: BaseModelType,
+        model_type: ModelType,
+        submodel: SubModelType,
+        model_info: ModelInfo,
     ) -> None:
         """Emitted when a model is correctly loaded (returns model info)"""
         self.__emit_session_event(
