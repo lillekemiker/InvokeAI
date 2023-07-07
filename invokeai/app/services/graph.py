@@ -3,7 +3,6 @@
 import copy
 import itertools
 import uuid
-from types import NoneType
 from typing import (
     Annotated,
     Any,
@@ -25,6 +24,9 @@ from ..invocations.baseinvocation import (
     BaseInvocationOutput,
     InvocationContext,
 )
+
+
+NoneType = type(None)
 
 
 class EdgeConnection(BaseModel):

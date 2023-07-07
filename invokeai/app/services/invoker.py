@@ -2,6 +2,7 @@
 
 from abc import ABC
 from threading import Event, Thread
+from typing import Optional
 
 from ..invocations.baseinvocation import InvocationContext
 from .graph import Graph, GraphExecutionState
